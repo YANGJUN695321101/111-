@@ -1,0 +1,322 @@
+import sys
+import json
+from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen
+from PIL import Image
+import pytesseract
+from PIL import Image
+from PyQt5.QtWidgets import QMainWindow
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.tmt.v20180321 import tmt_client, modelsimport sys
+import json
+from PyQt5.QtCore import Qt, QPoint
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen
+from PIL import Image
+import pytesseract
+from PIL import Image
+from PyQt5.QtWidgets import QMainWindow
+from tencentcloud.common import credential
+from tencentcloud.common.profile.client_profile import ClientProfile
+from tencentcloud.common.profile.http_profile import HttpProfile
+from tencentcloud.tmt.v20180321 import tmt_client, models
+
+# 添加以下行以设置 Tesseract-OCR 路径
+pytesseract.pytesseract.tesseract_cmd = r'F:\Tesseract-OCR\tesseract.exe'
+class TranslationWindow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('翻译窗口')
+        self.translation_text_edit = QTextEdit(self)
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.translation_text_edit)
+        self.setLayout(vbox)
+    def init_ui(self):
+        vbox = QVBoxLayout()
+        self.translation_text_edit = QTextEdit(self)
+        vbox.addWidget(self.translation_text_edit)
+        self.setLayout(vbox)
+class DashedBorderWindow(QWidget):   
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # 设置无边框窗口样式
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        # 设置背景透明
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.margin = 5
+        self.setContentsMargins(self.margin, self.margin, self.margin, self.margin)
+        self.setCursor(Qt.SizeAllCursor)
+        self.setMouseTracking(True)
+        self.is_resizing = False
+        self.old_pos = QPoint()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+    def paintEvent(self, event):
+        # 绘制虚线边框
+        painter = QPainter(self)
+        pen = QPen(Qt.DashLine)
+        pen.setColor(Qt.red)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.drawRect(self.margin, self.margin, self.width() - 2 * self.margin, self.height() - 2 * self.margin)
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.old_pos = event.globalPos()
+            self.is_resizing = event.pos().x() > self.width() - 20 and event.pos().y() > self.height() - 20
+            self.is_moving = not self.is_resizing
+            super().mousePressEvent(event)
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.old_pos)
+            if self.is_moving:
+                self.move(self.pos() + delta)
+            elif self.is_resizing:
+                self.resize(self.width() + delta.x(), self.height() + delta.y())
+            self.old_pos = event.globalPos()
+        super().mouseMoveEvent(event)
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.is_moving = False
+            self.is_resizing = False
+        super().mouseReleaseEvent(event)
+class MainWindow(QMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('翻译窗口')         
+        self.translation_text_edit = QTextEdit(self)
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.translation_text_edit)
+        self.setLayout(vbox)
+    def capture_screen(self):
+        screen = QApplication.primaryScreen()
+        screenshot = screen.grabWindow(QApplication.desktop().winId(),
+                                    self.geometry().x() + self.margin,
+                                    self.geometry().y() + self.margin,
+                                    self.geometry().width() - 2 * self.margin,
+                                    self.geometry().height() - 2 * self.margin)
+        return screenshot.toImage()
+    def __init__(self):
+        super().__init__()
+        self.setGeometry(100, 50, 400, 400)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setWindowTitle('OCR 文字识别')
+        self.init_ui()
+    def init_ui(self):   
+        vbox = QVBoxLayout()
+        hbox1 = QHBoxLayout()
+        self.ocr_text_edit = QTextEdit(self)
+        vbox.addWidget(self.ocr_text_edit) 
+        self.show_translate_btn = QPushButton('显示翻译窗口', self)
+        self.translation_window = TranslationWindow()
+
+        self.show_translate_btn.clicked.connect(self.translation_window.show)
+
+        hbox1.addWidget(self.show_translate_btn)
+        self.open_recognition_btn = QPushButton('打开识别窗口', self)
+        hbox1.addWidget(self.open_recognition_btn)
+        self.translation_text_edit = QTextEdit(self)
+        vbox.addWidget(self.translation_text_edit)       
+        vbox.addLayout(hbox1)
+        self.recognize_btn = QPushButton('识别', self)
+        hbox1.addWidget(self.recognize_btn)
+        self.translate_btn = QPushButton('翻译', self)
+        hbox1.addWidget(self.translate_btn)
+        self.auto_recognize_btn = QPushButton('自动识别', self)
+        hbox1.addWidget(self.auto_recognize_btn)
+        self.auto_translate_btn = QPushButton('自动翻译', self)
+        hbox1.addWidget(self.auto_translate_btn)
+        self.recognize_btn.clicked.connect(self.recognize_text)
+        self.translate_btn.clicked.connect(self.translate_text)
+        self.auto_recognize_btn.clicked.connect(self.auto_recognize_text)
+        self.auto_translate_btn.clicked.connect(self.auto_translate_text)
+        container = QWidget()
+        container.setLayout(vbox)
+        self.setCentralWidget(container)
+        self.open_recognition_btn.clicked.connect(self.show_dashed_window)
+    def show_dashed_window(self):
+        self.dashed_window = DashedBorderWindow()
+        self.dashed_window.show()
+    def recognize_text(self):
+        if hasattr(self, 'dashed_window') and self.dashed_window.isVisible():   
+            img = self.dashed_window.capture_screen()
+            img = img.convertToFormat(QImage.Format_RGB888)
+            img = Image.fromqpixmap(QPixmap.fromImage(img))
+            text = pytesseract.image_to_string(img, lang='chi_sim+eng+jpn')
+            self.ocr_text_edit.setPlainText(text)
+    def translate_text(self, source_text):
+        cred = credential.Credential("SECRET_ID", "SECRET_KEY")
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "tmt.tencentcloudapi.com"
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = tmt_client.TmtClient(cred, "REGION", clientProfile)
+        req = models.TextTranslateRequest()
+        params = {
+            "SourceText": source_text,
+            "Source": "auto",
+            "Target": "en",
+            "ProjectId": 0
+        }
+        req.from_json_string(json.dumps(params))
+        resp = client.TextTranslate(req)
+        translated_text = json.loads(resp.to_json_string())["TargetText"]
+        self.translation_window.translation_text_edit.setPlainText(translated_text)
+    def auto_recognize_text(self):
+        pass
+    def auto_translate_text(self):
+        pass
+app = QApplication(sys.argv)
+main_window = MainWindow()
+main_window.show()
+sys.exit(app.exec_())
+
+# 添加以下行以设置 Tesseract-OCR 路径
+pytesseract.pytesseract.tesseract_cmd = r'F:\Tesseract-OCR\tesseract.exe'
+class TranslationWindow(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('翻译窗口')
+        self.translation_text_edit = QTextEdit(self)
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.translation_text_edit)
+        self.setLayout(vbox)
+    def init_ui(self):
+        vbox = QVBoxLayout()
+        self.translation_text_edit = QTextEdit(self)
+        vbox.addWidget(self.translation_text_edit)
+        self.setLayout(vbox)
+class DashedBorderWindow(QWidget):   
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # 设置无边框窗口样式
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        # 设置背景透明
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.margin = 5
+        self.setContentsMargins(self.margin, self.margin, self.margin, self.margin)
+        self.setCursor(Qt.SizeAllCursor)
+        self.setMouseTracking(True)
+        self.is_resizing = False
+        self.old_pos = QPoint()
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+    def paintEvent(self, event):
+        # 绘制虚线边框
+        painter = QPainter(self)
+        pen = QPen(Qt.DashLine)
+        pen.setColor(Qt.red)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.drawRect(self.margin, self.margin, self.width() - 2 * self.margin, self.height() - 2 * self.margin)
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.old_pos = event.globalPos()
+            self.is_resizing = event.pos().x() > self.width() - 20 and event.pos().y() > self.height() - 20
+            self.is_moving = not self.is_resizing
+            super().mousePressEvent(event)
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.LeftButton:
+            delta = QPoint(event.globalPos() - self.old_pos)
+            if self.is_moving:
+                self.move(self.pos() + delta)
+            elif self.is_resizing:
+                self.resize(self.width() + delta.x(), self.height() + delta.y())
+            self.old_pos = event.globalPos()
+        super().mouseMoveEvent(event)
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.is_moving = False
+            self.is_resizing = False
+        super().mouseReleaseEvent(event)
+class MainWindow(QMainWindow):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('翻译窗口')
+        self.translation_text_edit = QTextEdit(self)
+        vbox = QVBoxLayout()
+        vbox.addWidget(self.translation_text_edit)
+        self.setLayout(vbox)
+    def capture_screen(self):
+        screen = QApplication.primaryScreen()
+        screenshot = screen.grabWindow(QApplication.desktop().winId(),
+                                    self.geometry().x() + self.margin,
+                                    self.geometry().y() + self.margin,
+                                    self.geometry().width() - 2 * self.margin,
+                                    self.geometry().height() - 2 * self.margin)
+        return screenshot.toImage()
+    def __init__(self):
+        super().__init__()
+        self.setGeometry(100, 50, 400, 400)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setWindowTitle('OCR 文字识别')
+        self.init_ui()
+    def init_ui(self):   
+        vbox = QVBoxLayout()
+        hbox1 = QHBoxLayout()
+        self.ocr_text_edit = QTextEdit(self)
+        vbox.addWidget(self.ocr_text_edit) 
+        self.show_translate_btn = QPushButton('显示翻译窗口', self)
+        self.translation_window = TranslationWindow()
+
+        self.show_translate_btn.clicked.connect(self.translation_window.show)
+        hbox1.addWidget(self.show_translate_btn)
+        self.open_recognition_btn = QPushButton('打开识别窗口', self)
+        hbox1.addWidget(self.open_recognition_btn)
+        self.translation_text_edit = QTextEdit(self)
+        vbox.addWidget(self.translation_text_edit)       
+        vbox.addLayout(hbox1)
+        self.recognize_btn = QPushButton('识别', self)
+        hbox1.addWidget(self.recognize_btn)
+        self.translate_btn = QPushButton('翻译', self)
+        hbox1.addWidget(self.translate_btn)
+        self.auto_recognize_btn = QPushButton('自动识别', self)
+        hbox1.addWidget(self.auto_recognize_btn)
+        self.auto_translate_btn = QPushButton('自动翻译', self)
+        hbox1.addWidget(self.auto_translate_btn)
+        self.recognize_btn.clicked.connect(self.recognize_text)
+        self.translate_btn.clicked.connect(self.translate_text)
+        self.auto_recognize_btn.clicked.connect(self.auto_recognize_text)
+        self.auto_translate_btn.clicked.connect(self.auto_translate_text)
+        container = QWidget()
+        container.setLayout(vbox)
+        self.setCentralWidget(container)
+        self.open_recognition_btn.clicked.connect(self.show_dashed_window)
+    def show_dashed_window(self):
+        self.dashed_window = DashedBorderWindow()
+        self.dashed_window.show()
+    def recognize_text(self):
+        if hasattr(self, 'dashed_window') and self.dashed_window.isVisible():   
+            img = self.dashed_window.capture_screen()
+            img = img.convertToFormat(QImage.Format_RGB888)
+            img = Image.fromqpixmap(QPixmap.fromImage(img))
+            text = pytesseract.image_to_string(img, lang='chi_sim+eng+jpn')
+            self.ocr_text_edit.setPlainText(text)
+    def translate_text(self, source_text):
+        cred = credential.Credential("SECRET_ID", "SECRET_KEY")
+        httpProfile = HttpProfile()
+        httpProfile.endpoint = "tmt.tencentcloudapi.com"
+        clientProfile = ClientProfile()
+        clientProfile.httpProfile = httpProfile
+        client = tmt_client.TmtClient(cred, "REGION", clientProfile)
+        req = models.TextTranslateRequest()
+        params = {
+            "SourceText": source_text,
+            "Source": "auto",
+            "Target": "en",
+            "ProjectId": 0
+        }
+        req.from_json_string(json.dumps(params))
+        resp = client.TextTranslate(req)
+        translated_text = json.loads(resp.to_json_string())["TargetText"]
+        self.translation_window.translation_text_edit.setPlainText(translated_text)
+    def auto_recognize_text(self):
+        pass
+    def auto_translate_text(self):
+        pass
+app = QApplication(sys.argv)
+main_window = MainWindow()
+main_window.show()
+sys.exit(app.exec_())
