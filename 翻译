@@ -22,6 +22,11 @@ class TranslationWindow(QWidget):
         vbox = QVBoxLayout()
         vbox.addWidget(self.translation_text_edit)
         self.setLayout(vbox)
+    def init_ui(self):
+        vbox = QVBoxLayout()
+        self.translation_text_edit = QTextEdit(self)
+        vbox.addWidget(self.translation_text_edit)
+        self.setLayout(vbox)
 class DashedBorderWindow(QWidget):   
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -60,7 +65,6 @@ class DashedBorderWindow(QWidget):
                 self.resize(self.width() + delta.x(), self.height() + delta.y())
             self.old_pos = event.globalPos()
         super().mouseMoveEvent(event)
-
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.is_moving = False
@@ -94,6 +98,8 @@ class MainWindow(QMainWindow):
         self.ocr_text_edit = QTextEdit(self)
         vbox.addWidget(self.ocr_text_edit) 
         self.show_translate_btn = QPushButton('显示翻译窗口', self)
+        self.translation_window = TranslationWindow()
+
         self.show_translate_btn.clicked.connect(self.translation_window.show)
         hbox1.addWidget(self.show_translate_btn)
         self.open_recognition_btn = QPushButton('打开识别窗口', self)
